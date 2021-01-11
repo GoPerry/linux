@@ -1,0 +1,32 @@
+What:		/sys/bus/wmi/devices/6932965F-1671-4CEB-B988-D3AB0A901919/devices_supported
+Date:		Feb 2021
+KernelVersion:	5.12
+Contact:	"perry.yuan@dell.com>"
+Description:
+		Display which dell hardware level privacy devices are supported
+		“Dell Privacy” is a set of HW, FW, and SW features to enhance
+		Dell’s commitment to platform privacy for MIC, Camera, and
+		ePrivacy screens.
+		The supported hardware privacy devices are:
+		- 0 = Not Supported
+		- 1 = Supported
+		- Bit0 -> Microphone
+		- Bit1 -> Camera
+		- Bit2 -> ePrivacy Screen
+
+What:		/sys/bus/wmi/devices/6932965F-1671-4CEB-B988-D3AB0A901919/current_state
+Date:		Feb 2021
+KernelVersion:	5.12
+Contact:	"perry.yuan@dell.com>"
+Description:
+		Allow user space to check current dell privacy device state.
+		Describes the Device State class exposed by BIOS which can be
+		consumed by various applications interested in knowing the Privacy
+		feature capabilities
+		There are three Bits for available states:
+		- 0 = Enabled
+		- 1 = Disabled
+		- Bit0 -> Microphone
+		- Bit1 -> Camera
+		- Bit2 -> ePrivacyScreen
+

@@ -13,20 +13,22 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
-#include <linux/kernel.h>
-#include <linux/module.h>
+#include <linux/acpi.h>
+#include <linux/dmi.h>
 #include <linux/init.h>
-#include <linux/slab.h>
-#include <linux/types.h>
 #include <linux/input.h>
 #include <linux/input/sparse-keymap.h>
-#include <linux/acpi.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/slab.h>
 #include <linux/string.h>
-#include <linux/dmi.h>
+#include <linux/types.h>
 #include <linux/wmi.h>
 #include <acpi/video.h>
+
 #include "dell-smbios.h"
 #include "dell-wmi-descriptor.h"
+#include "dell-privacy-wmi.h"
 
 MODULE_AUTHOR("Matthew Garrett <mjg@redhat.com>");
 MODULE_AUTHOR("Pali Rohár <pali@kernel.org>");
@@ -381,6 +383,7 @@ static void dell_wmi_notify(struct wmi_device *wdev,
 	u16 *buffer_entry, *buffer_end;
 	acpi_size buffer_size;
 	int len, i;
+	int err;
 
 	if (obj->type != ACPI_TYPE_BUFFER) {
 		pr_warn("bad response type %x\n", obj->type);
@@ -427,7 +430,6 @@ static void dell_wmi_notify(struct wmi_device *wdev,
 
 		switch (buffer_entry[1]) {
 		case 0x0000: /* One key pressed or event occurred */
-		case 0x0012: /* Event with extended data occurred */
 			if (len > 2)
 				dell_wmi_process_key(wdev, buffer_entry[1],
 						     buffer_entry[2]);
@@ -438,6 +440,17 @@ static void dell_wmi_notify(struct wmi_device *wdev,
 			for (i = 2; i < len; ++i)
 				dell_wmi_process_key(wdev, buffer_entry[1],
 						     buffer_entry[i]);
+			break;
+		case 0x0012:
+			err = dell_privacy_state();
+			if (err == 0) {
+				dell_privacy_process_event(buffer_entry[1],
+							   buffer_entry[3], buffer_entry[4]);
+			} else {
+				if (len > 2)
+					dell_wmi_process_key(wdev, buffer_entry[1],
+							     buffer_entry[2]);
+			}
 			break;
 		default: /* Unknown event */
 			pr_info("Unknown WMI event type 0x%x\n",
