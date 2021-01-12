@@ -31,6 +31,7 @@ struct rt715_sdca_priv {
 	int l_is_unmute;
 	int r_is_unmute;
 	int hw_sdw_ver;
+	bool micmute_led;
 };
 
 struct rt715_sdw_stream_data {
