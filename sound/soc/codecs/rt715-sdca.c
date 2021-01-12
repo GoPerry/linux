@@ -12,6 +12,7 @@
 #include <linux/version.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
+#include <linux/leds.h>
 #include <linux/pm_runtime.h>
 #include <linux/pm.h>
 #include <linux/soundwire/sdw.h>
@@ -269,6 +270,7 @@ static int rt715_sdca_put_volsw(struct snd_kcontrol *kcontrol,
 	unsigned int reg = mc->reg;
 	unsigned int max = mc->max;
 	int err;
+	bool micmute_led;
 
 	val = ucontrol->value.integer.value[0];
 	if (invert)
@@ -285,6 +287,16 @@ static int rt715_sdca_put_volsw(struct snd_kcontrol *kcontrol,
 		err = snd_soc_component_write(component, reg2 + i * 2, val2);
 		if (err < 0)
 			return err;
+	}
+
+	/* Micmute LED state changed by muted/unmute switch */
+	if (mc->invert) {
+		if (ucontrol->value.integer.value[0] || ucontrol->value.integer.value[1]) {
+			micmute_led = LED_OFF;
+		} else {
+			micmute_led = LED_ON;
+		}
+		ledtrig_audio_set(LED_AUDIO_MICMUTE, micmute_led);
 	}
 
 	return 0;
