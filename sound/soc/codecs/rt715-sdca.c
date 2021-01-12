@@ -11,6 +11,7 @@
 #include <linux/moduleparam.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
+#include <linux/leds.h>
 #include <linux/pm_runtime.h>
 #include <linux/pm.h>
 #include <linux/soundwire/sdw.h>
@@ -358,6 +359,7 @@ static int rt715_sdca_put_volsw(struct snd_kcontrol *kcontrol,
 	unsigned int mask = (1 << fls(max)) - 1;
 	unsigned int invert = p->invert;
 	int err;
+	bool micmute_led;
 
 	for (i = 0; i < 4; i++) {
 		if (ucontrol->value.integer.value[i] != rt715->kctl_switch_orig[i]) {
@@ -392,6 +394,15 @@ static int rt715_sdca_put_volsw(struct snd_kcontrol *kcontrol,
 			val_mask, val[i * 2 + 1]);
 		if (err < 0)
 			return err;
+	}
+	/* Micmute LED state changed by muted/unmute switch */
+	if (mc->invert) {
+	        if (ucontrol->value.integer.value[0] || ucontrol->value.integer.value[1]) {
+	                micmute_led = LED_OFF;
+	        } else {
+	                micmute_led = LED_ON;
+	        }
+	        ledtrig_audio_set(LED_AUDIO_MICMUTE, micmute_led);
 	}
 
 	return k_changed;
