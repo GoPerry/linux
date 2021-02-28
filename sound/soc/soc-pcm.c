@@ -473,6 +473,42 @@ static void soc_pcm_apply_msb(struct snd_pcm_substream *substream)
 	soc_pcm_set_msb(substream, cpu_bits);
 }
 
+static void soc_pcm_hw_init(struct snd_pcm_hardware *hw)
+{
+	hw->rates		= UINT_MAX;
+	hw->rate_min		= 0;
+	hw->rate_max		= UINT_MAX;
+	hw->channels_min	= 0;
+	hw->channels_max	= UINT_MAX;
+	hw->formats		= ULLONG_MAX;
+}
+
+static void soc_pcm_hw_update_rate(struct snd_pcm_hardware *hw,
+				   struct snd_soc_pcm_stream *p)
+{
+	hw->rates = snd_pcm_rate_mask_intersect(hw->rates, p->rates);
+
+	/* setup hw->rate_min/max via hw->rates first */
+	snd_pcm_hw_limit_rates(hw);
+
+	/* update hw->rate_min/max by snd_soc_pcm_stream */
+	hw->rate_min = max(hw->rate_min, p->rate_min);
+	hw->rate_max = min_not_zero(hw->rate_max, p->rate_max);
+}
+
+static void soc_pcm_hw_update_chan(struct snd_pcm_hardware *hw,
+				   struct snd_soc_pcm_stream *p)
+{
+	hw->channels_min = max(hw->channels_min, p->channels_min);
+	hw->channels_max = min(hw->channels_max, p->channels_max);
+}
+
+static void soc_pcm_hw_update_format(struct snd_pcm_hardware *hw,
+				     struct snd_soc_pcm_stream *p)
+{
+	hw->formats &= p->formats;
+}
+
 /**
  * snd_soc_runtime_calc_hw() - Calculate hw limits for a PCM stream
  * @rtd: ASoC PCM runtime
@@ -489,13 +525,10 @@ int snd_soc_runtime_calc_hw(struct snd_soc_pcm_runtime *rtd,
 	struct snd_soc_dai *cpu_dai;
 	struct snd_soc_pcm_stream *codec_stream;
 	struct snd_soc_pcm_stream *cpu_stream;
-	unsigned int chan_min = 0, chan_max = UINT_MAX;
 	unsigned int cpu_chan_min = 0, cpu_chan_max = UINT_MAX;
-	unsigned int rate_min = 0, rate_max = UINT_MAX;
-	unsigned int cpu_rate_min = 0, cpu_rate_max = UINT_MAX;
-	unsigned int rates = UINT_MAX, cpu_rates = UINT_MAX;
-	u64 formats = ULLONG_MAX;
 	int i;
+
+	soc_pcm_hw_init(hw);
 
 	/* first calculate min/max only for CPUs in the DAI link */
 	for_each_rtd_cpu_dais(rtd, i, cpu_dai) {
@@ -511,14 +544,12 @@ int snd_soc_runtime_calc_hw(struct snd_soc_pcm_runtime *rtd,
 
 		cpu_stream = snd_soc_dai_get_pcm_stream(cpu_dai, stream);
 
-		cpu_chan_min = max(cpu_chan_min, cpu_stream->channels_min);
-		cpu_chan_max = min(cpu_chan_max, cpu_stream->channels_max);
-		cpu_rate_min = max(cpu_rate_min, cpu_stream->rate_min);
-		cpu_rate_max = min_not_zero(cpu_rate_max, cpu_stream->rate_max);
-		formats &= cpu_stream->formats;
-		cpu_rates = snd_pcm_rate_mask_intersect(cpu_stream->rates,
-							cpu_rates);
+		soc_pcm_hw_update_chan(hw, cpu_stream);
+		soc_pcm_hw_update_rate(hw, cpu_stream);
+		soc_pcm_hw_update_format(hw, cpu_stream);
 	}
+	cpu_chan_min = hw->channels_min;
+	cpu_chan_max = hw->channels_max;
 
 	/* second calculate min/max only for CODECs in the DAI link */
 	for_each_rtd_codec_dais(rtd, i, codec_dai) {
@@ -534,16 +565,13 @@ int snd_soc_runtime_calc_hw(struct snd_soc_pcm_runtime *rtd,
 
 		codec_stream = snd_soc_dai_get_pcm_stream(codec_dai, stream);
 
-		chan_min = max(chan_min, codec_stream->channels_min);
-		chan_max = min(chan_max, codec_stream->channels_max);
-		rate_min = max(rate_min, codec_stream->rate_min);
-		rate_max = min_not_zero(rate_max, codec_stream->rate_max);
-		formats &= codec_stream->formats;
-		rates = snd_pcm_rate_mask_intersect(codec_stream->rates, rates);
+		soc_pcm_hw_update_chan(hw, codec_stream);
+		soc_pcm_hw_update_rate(hw, codec_stream);
+		soc_pcm_hw_update_format(hw, codec_stream);
 	}
 
 	/* Verify both a valid CPU DAI and a valid CODEC DAI were found */
-	if (!chan_min || !cpu_chan_min)
+	if (!hw->channels_min)
 		return -EINVAL;
 
 	/*
@@ -552,22 +580,9 @@ int snd_soc_runtime_calc_hw(struct snd_soc_pcm_runtime *rtd,
 	 * channel allocation be fixed up later
 	 */
 	if (rtd->num_codecs > 1) {
-		chan_min = cpu_chan_min;
-		chan_max = cpu_chan_max;
+		hw->channels_min = cpu_chan_min;
+		hw->channels_max = cpu_chan_max;
 	}
-
-	/* finally find a intersection between CODECs and CPUs */
-	hw->channels_min = max(chan_min, cpu_chan_min);
-	hw->channels_max = min(chan_max, cpu_chan_max);
-	hw->formats = formats;
-	hw->rates = snd_pcm_rate_mask_intersect(rates, cpu_rates);
-
-	snd_pcm_hw_limit_rates(hw);
-
-	hw->rate_min = max(hw->rate_min, cpu_rate_min);
-	hw->rate_min = max(hw->rate_min, rate_min);
-	hw->rate_max = min_not_zero(hw->rate_max, cpu_rate_max);
-	hw->rate_max = min_not_zero(hw->rate_max, rate_max);
 
 	return 0;
 }
@@ -1344,8 +1359,8 @@ static int dpcm_add_paths(struct snd_soc_pcm_runtime *fe, int stream,
 		/* is there a valid BE rtd for this widget */
 		be = dpcm_get_be(card, widget, stream);
 		if (!be) {
-			dev_err(fe->dev, "ASoC: no BE found for %s\n",
-					widget->name);
+			dev_dbg(fe->dev, "ASoC: no BE found for %s\n",
+				widget->name);
 			continue;
 		}
 
@@ -1514,14 +1529,10 @@ unwind:
 static void dpcm_init_runtime_hw(struct snd_pcm_runtime *runtime,
 				 struct snd_soc_pcm_stream *stream)
 {
-	runtime->hw.rates = stream->rates;
+	struct snd_pcm_hardware *hw = &runtime->hw;
 
-	snd_pcm_limit_hw_rates(runtime);
-
-	runtime->hw.rate_min = stream->rate_min;
-	runtime->hw.rate_max = min_not_zero(stream->rate_max, UINT_MAX);
-	runtime->hw.channels_min = stream->channels_min;
-	runtime->hw.channels_max = stream->channels_max;
+	soc_pcm_hw_update_rate(hw, stream);
+	soc_pcm_hw_update_chan(hw, stream);
 	if (runtime->hw.formats)
 		runtime->hw.formats &= stream->formats;
 	else
@@ -1560,7 +1571,7 @@ static void dpcm_runtime_merge_format(struct snd_pcm_substream *substream,
 
 			codec_stream = snd_soc_dai_get_pcm_stream(dai, stream);
 
-			hw->formats &= codec_stream->formats;
+			soc_pcm_hw_update_format(hw, codec_stream);
 		}
 	}
 }
@@ -1598,10 +1609,7 @@ static void dpcm_runtime_merge_chan(struct snd_pcm_substream *substream,
 
 			cpu_stream = snd_soc_dai_get_pcm_stream(dai, stream);
 
-			hw->channels_min = max(hw->channels_min,
-					       cpu_stream->channels_min);
-			hw->channels_max = min(hw->channels_max,
-					       cpu_stream->channels_max);
+			soc_pcm_hw_update_chan(hw, cpu_stream);
 		}
 
 		/*
@@ -1611,10 +1619,7 @@ static void dpcm_runtime_merge_chan(struct snd_pcm_substream *substream,
 		if (be->num_codecs == 1) {
 			codec_stream = snd_soc_dai_get_pcm_stream(asoc_rtd_to_codec(be, 0), stream);
 
-			hw->channels_min = max(hw->channels_min,
-					       codec_stream->channels_min);
-			hw->channels_max = min(hw->channels_max,
-					       codec_stream->channels_max);
+			soc_pcm_hw_update_chan(hw, codec_stream);
 		}
 	}
 }
@@ -1651,12 +1656,7 @@ static void dpcm_runtime_merge_rate(struct snd_pcm_substream *substream,
 
 			pcm = snd_soc_dai_get_pcm_stream(dai, stream);
 
-			hw->rates = snd_pcm_rate_mask_intersect(hw->rates, pcm->rates);
-
-			snd_pcm_limit_hw_rates(runtime);
-
-			hw->rate_min = max(hw->rate_min, pcm->rate_min);
-			hw->rate_max = min_not_zero(hw->rate_max, pcm->rate_max);
+			soc_pcm_hw_update_rate(hw, pcm);
 		}
 	}
 }
@@ -1664,9 +1664,12 @@ static void dpcm_runtime_merge_rate(struct snd_pcm_substream *substream,
 static void dpcm_set_fe_runtime(struct snd_pcm_substream *substream)
 {
 	struct snd_pcm_runtime *runtime = substream->runtime;
+	struct snd_pcm_hardware *hw = &runtime->hw;
 	struct snd_soc_pcm_runtime *rtd = asoc_substream_to_rtd(substream);
 	struct snd_soc_dai *cpu_dai;
 	int i;
+
+	soc_pcm_hw_init(hw);
 
 	for_each_rtd_cpu_dais(rtd, i, cpu_dai) {
 		/*

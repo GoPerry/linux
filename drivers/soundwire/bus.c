@@ -593,7 +593,7 @@ EXPORT_SYMBOL(sdw_write);
 /* called with bus_lock held */
 static struct sdw_slave *sdw_get_slave(struct sdw_bus *bus, int i)
 {
-	struct sdw_slave *slave = NULL;
+	struct sdw_slave *slave;
 
 	list_for_each_entry(slave, &bus->slaves, node) {
 		if (slave->dev_num == i)
@@ -899,12 +899,12 @@ static int sdw_bus_wait_for_clk_prep_deprep(struct sdw_bus *bus, u16 dev_num)
 	int val;
 
 	do {
-		val = sdw_bread_no_pm(bus, dev_num, SDW_SCP_STAT) &
-			SDW_SCP_STAT_CLK_STP_NF;
+		val = sdw_bread_no_pm(bus, dev_num, SDW_SCP_STAT);
 		if (val < 0) {
 			dev_err(bus->dev, "SDW_SCP_STAT bread failed:%d\n", val);
 			return val;
 		}
+		val &= SDW_SCP_STAT_CLK_STP_NF;
 		if (!val) {
 			dev_dbg(bus->dev, "clock stop prep/de-prep done slave:%d",
 				dev_num);
@@ -1304,7 +1304,6 @@ static int sdw_initialize_slave(struct sdw_slave *slave)
 					"SDW_SCP_INT1 (PARITY) write failed:%d\n", ret);
 				return ret;
 			}
-
 		}
 	}
 

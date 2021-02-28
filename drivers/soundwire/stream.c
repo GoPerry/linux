@@ -261,7 +261,7 @@ static int sdw_program_master_port_params(struct sdw_bus *bus,
  */
 static int sdw_program_port_params(struct sdw_master_runtime *m_rt)
 {
-	struct sdw_slave_runtime *s_rt = NULL;
+	struct sdw_slave_runtime *s_rt;
 	struct sdw_bus *bus = m_rt->bus;
 	struct sdw_port_runtime *p_rt;
 	int ret = 0;
@@ -1449,7 +1449,7 @@ struct sdw_dpn_prop *sdw_get_slave_dpn_prop(struct sdw_slave *slave,
 static void sdw_acquire_bus_lock(struct sdw_stream_runtime *stream)
 {
 	struct sdw_master_runtime *m_rt;
-	struct sdw_bus *bus = NULL;
+	struct sdw_bus *bus;
 
 	/* Iterate for all Master(s) in Master list */
 	list_for_each_entry(m_rt, &stream->master_list, stream_node) {
@@ -1470,8 +1470,8 @@ static void sdw_acquire_bus_lock(struct sdw_stream_runtime *stream)
  */
 static void sdw_release_bus_lock(struct sdw_stream_runtime *stream)
 {
-	struct sdw_master_runtime *m_rt = NULL;
-	struct sdw_bus *bus = NULL;
+	struct sdw_master_runtime *m_rt;
+	struct sdw_bus *bus;
 
 	/* Iterate for all Master(s) in Master list */
 	list_for_each_entry_reverse(m_rt, &stream->master_list, stream_node) {
